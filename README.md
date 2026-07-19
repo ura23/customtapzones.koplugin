@@ -5,15 +5,20 @@ This plugin allows users to configure custom tap zones for page turning. It prov
 
 ## Screenshots
 
-<div align="center">
-  <img width="571" height="379" alt="Main UI" src="https://github.com/user-attachments/assets/f78e68f8-23ab-45d0-8469-583c833c00e1" />
-  <p><em>Main UI</em></p>
-</div>
-
-<div align="center">
-  <img width="676" height="350" alt="Edit tap zones" src="https://github.com/user-attachments/assets/91096a56-73fb-45db-a8fb-aa5f6bb0dfae" />
-  <p><em>Edit tap zones</em></p>
-</div>
+<table>
+  <tr>
+    <td align="center">
+      <img width="571" height="379" alt="Main UI" src="https://github.com/user-attachments/assets/f78e68f8-23ab-45d0-8469-583c833c00e1" />
+      <br>
+      <em>Main UI</em>
+    </td>
+    <td align="center">
+      <img width="676" height="350" alt="Edit tap zones" src="https://github.com/user-attachments/assets/91096a56-73fb-45db-a8fb-aa5f6bb0dfae" />
+      <br>
+      <em>Edit tap zones</em>
+    </td>
+  </tr>
+</table>
 
 ## Features
 * **Customizable grid size:** Users can change the number of columns and rows for the tap zone grid (from 2x2 up to 8x8).
