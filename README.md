@@ -25,7 +25,7 @@ This plugin allows users to configure custom tap zones for page turning. It prov
 * **Action assignment:** Each cell in the grid can be assigned one of three actions:
   * Page forward
   * Page backward
-  * Ignore tap (disables page turning in this zone, resulting in no reaction to touch)
+  * Ignore tap
 * **Orientation support:** The plugin maintains independent grid configurations for portrait and landscape reading modes.
 * **Layout copying:** The configured grid layout can be quickly copied from portrait to landscape mode and vice versa.
 * **Visual editor:** A built-in graphical editor allows users to configure the actions for each cell directly through the device interface. The editor also warns the user if an assigned zone overlaps with the system menu invocation zones (the top and bottom parts of the screen).
