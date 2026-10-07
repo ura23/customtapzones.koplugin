@@ -1,9 +1,12 @@
+-- v1.1: Honour mirrored/inverse reading order when painting cells; scale line
+--       width with Screen:scaleBySize; corrected stale header comment.
+-- v1.0: Initial version.
 --[[
 ZoneOverlayWidget — full-screen overlay that draws the active tap grid.
 
 Shows:
-  • Semi-transparent dark lines forming the N×M grid
-  • A label in each cell: "▶ Fwd", "◀ Back", or "— —"
+  • Opaque light/dark cell backgrounds forming the N×M grid
+  • A label in each cell: "▶▶" (forward), "◀◀" (backward), or "— —" (ignore)
 
 Dismissed immediately on any tap anywhere on the screen.
 The tap is NOT forwarded further (overlay is modal until dismissed).
@@ -17,12 +20,11 @@ local GestureRange  = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local TextWidget    = require("ui/widget/textwidget")
 local UIManager     = require("ui/uimanager")
-local _             = require("gettext")
 local Screen        = Device.screen
 
 -- ── Visual constants ─────────────────────────────────────────────────────────
 
-local LINE_WIDTH        = 2          -- grid line thickness in px
+local LINE_WIDTH        = Screen:scaleBySize(2)  -- grid line thickness
 local LINE_COLOR        = Blitbuffer.COLOR_BLACK
 local CELL_BG_FWD       = Blitbuffer.COLOR_LIGHT_GRAY   -- forward cells
 local CELL_BG_BWD       = Blitbuffer.COLOR_GRAY          -- backward cells
@@ -37,6 +39,7 @@ local ZoneOverlayWidget = InputContainer:extend{
     cols   = 3,
     rows   = 3,
     matrix = nil,   -- [row][col] = "forward"|"backward"|"ignore"
+    mirror = false, -- mirror column order (RTL / inverse reading order)
 
     -- Optional
     close_callback = nil,
@@ -59,6 +62,14 @@ function ZoneOverlayWidget:getSize()
     return self.dimen
 end
 
+--- Logical column for a display slot, accounting for mirroring.
+function ZoneOverlayWidget:_logicalCol(display_col)
+    if self.mirror then
+        return self.cols - display_col + 1
+    end
+    return display_col
+end
+
 -- ── Painting ──────────────────────────────────────────────────────────────────
 
 function ZoneOverlayWidget:paintTo(bb, x, y)
@@ -73,15 +84,16 @@ function ZoneOverlayWidget:paintTo(bb, x, y)
 
     -- 1. Fill cell backgrounds
     for r = 1, rows do
-        for c = 1, cols do
+        for display_c = 1, cols do
+            local c = self:_logicalCol(display_c)
             local action = (self.matrix[r] and self.matrix[r][c]) or "forward"
             local bg = CELL_BG_IGN
             if action == "forward"  then bg = CELL_BG_FWD end
             if action == "backward" then bg = CELL_BG_BWD end
 
-            local cx = x + math.floor((c - 1) * cell_w)
+            local cx = x + math.floor((display_c - 1) * cell_w)
             local cy = y + math.floor((r - 1) * cell_h)
-            local cw = math.floor(c * cell_w) - math.floor((c - 1) * cell_w)
+            local cw = math.floor(display_c * cell_w) - math.floor((display_c - 1) * cell_w)
             local ch = math.floor(r * cell_h) - math.floor((r - 1) * cell_h)
             bb:paintRect(cx, cy, cw, ch, bg)
         end
@@ -105,12 +117,13 @@ function ZoneOverlayWidget:paintTo(bb, x, y)
 
     -- 3. Draw action label in each cell
     for r = 1, rows do
-        for c = 1, cols do
+        for display_c = 1, cols do
+            local c = self:_logicalCol(display_c)
             local action = (self.matrix[r] and self.matrix[r][c]) or "forward"
             local label
-            if action == "forward"  then label = _("▶▶")  end
-            if action == "backward" then label = _("◀◀") end
-            if action == "ignore"   then label = _("— —")    end
+            if action == "forward"  then label = "▶▶"  end
+            if action == "backward" then label = "◀◀" end
+            if action == "ignore"   then label = "— —"    end
 
             local tw = TextWidget:new{
                 text       = label,
@@ -119,9 +132,9 @@ function ZoneOverlayWidget:paintTo(bb, x, y)
             }
             local tsz = tw:getSize()
 
-            local cx = x + math.floor((c - 1) * cell_w)
+            local cx = x + math.floor((display_c - 1) * cell_w)
             local cy = y + math.floor((r - 1) * cell_h)
-            local cw = math.floor(c * cell_w) - math.floor((c - 1) * cell_w)
+            local cw = math.floor(display_c * cell_w) - math.floor((display_c - 1) * cell_w)
             local ch = math.floor(r * cell_h) - math.floor((r - 1) * cell_h)
 
             -- Centre label in cell (clamp so it never goes outside)
