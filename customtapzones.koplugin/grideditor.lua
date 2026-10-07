@@ -1,3 +1,7 @@
+-- v1.1: Honour mirrored/inverse reading order when laying out the grid, derive
+--       the system-zone warning from real DTAP zones, free the old widget tree
+--       on rebuild, inlined en/uk tr() localization.
+-- v1.0: Initial version.
 local Blitbuffer   = require("ffi/blitbuffer")
 local Button       = require("ui/widget/button")
 local CenterContainer = require("ui/widget/container/centercontainer")
@@ -16,11 +20,30 @@ local UIManager    = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan  = require("ui/widget/verticalspan")
 local ButtonTable  = require("ui/widget/buttontable")
-local _            = require("gettext")
 local Screen       = Device.screen
 
-local MENU_TOP_RATIO    = 1/8
-local MENU_BOTTOM_RATIO = 1/8
+-- ── Localization (en/uk) ────────────────────────────────────────────
+-- Language comes from G_reader_settings:readSetting("language"); anything
+-- that is not "uk*" falls back to English.
+local function is_uk_language()
+    local lang = G_reader_settings and G_reader_settings:readSetting("language")
+    return type(lang) == "string" and lang:sub(1, 2) == "uk"
+end
+
+local function tr(en, uk)
+    if is_uk_language() then return uk or en end
+    return en
+end
+
+-- Vertical bands that belong to the system (top menu, bottom minibar) and
+-- therefore cannot receive custom tap actions: taps there are intercepted by
+-- higher-priority reader zones.
+local DTAP_ZONE_MENU    = G_defaults and G_defaults:readSetting("DTAP_ZONE_MENU")
+    or { y = 0, h = 1 / 8 }
+local DTAP_ZONE_MINIBAR = G_defaults and G_defaults:readSetting("DTAP_ZONE_MINIBAR")
+    or { y = 12 / 13, h = 1 / 13 }
+local MENU_TOP_RATIO    = DTAP_ZONE_MENU.y + DTAP_ZONE_MENU.h
+local MENU_BOTTOM_RATIO = DTAP_ZONE_MINIBAR.y
 
 local ACTION_CYCLE = { "forward", "backward", "ignore" }
 
@@ -34,9 +57,9 @@ local function nextAction(current)
 end
 
 local function actionLabel(action)
-    if action == "forward"  then return _("▶▶") end
-    if action == "backward" then return _("◀◀") end
-    return _("— —")
+    if action == "forward"  then return "▶▶" end
+    if action == "backward" then return "◀◀" end
+    return "— —"
 end
 
 local function rowOverlapsMenuZone(row_index, total_rows)
@@ -44,7 +67,7 @@ local function rowOverlapsMenuZone(row_index, total_rows)
     local row_top    = (row_index - 1) * cell_h
     local row_bottom = row_index * cell_h
     if row_bottom <= MENU_TOP_RATIO then return true end
-    if row_top >= (1.0 - MENU_BOTTOM_RATIO) then return true end
+    if row_top >= MENU_BOTTOM_RATIO then return true end
     return false
 end
 
@@ -52,8 +75,8 @@ local GridEditorWidget = InputContainer:extend{
     cols     = 3,
     rows     = 3,
     matrix   = nil,
+    mirror   = false,   -- mirror column order (RTL / inverse reading order)
     callback        = nil,
-    close_callback  = nil,
 }
 
 function GridEditorWidget:init()
@@ -80,32 +103,29 @@ function GridEditorWidget:getSize()
     return self.dimen
 end
 
+--- Logical column for a display slot, accounting for mirroring.
+function GridEditorWidget:_logicalCol(display_col)
+    if self.mirror then
+        return self.cols - display_col + 1
+    end
+    return display_col
+end
+
 function GridEditorWidget:_buildUI()
     local dialog_w = self.dialog_w
-    
-    -- Розраховуємо точну внутрішню ширину без урахування рамок і відступів FrameContainer
+
+    -- Exact inner width without FrameContainer borders and padding
     local inner_w = dialog_w - (Size.padding.default * 2) - (Size.border.window * 2)
 
     local title_bar = TitleBar:new{
-        title       = _("Tap to assign"),
+        title       = tr("Tap to assign", "Натиснути для призначення"),
         width       = inner_w,
         with_bottom_line = true,
         close_callback = function() self:_onClose() end,
     }
 
-    local hint_font = Font:getFace("smallinfofont")
-    -- local hint = TextBoxWidget:new{
-        -- text  = _("Tap a cell to cycle: Forward → Back → Ignore"),
-        -- face  = hint_font,
-        -- width = inner_w,
-    -- }
-    -- local hint_container = CenterContainer:new{
-        -- dimen = Geom:new{ w = inner_w, h = hint:getSize().h },
-        -- hint,
-    -- }
-
     local sep       = Size.line.medium
-    -- Розподіляємо ширину кнопок суворо в межах inner_w
+    -- Distribute the button width strictly inside inner_w
     local cell_w    = math.floor((inner_w - sep * (self.cols - 1)) / self.cols)
 
     local grid_group = VerticalGroup:new{ width = inner_w }
@@ -114,7 +134,8 @@ function GridEditorWidget:_buildUI()
         local row_group = HorizontalGroup:new{}
         local overlaps  = rowOverlapsMenuZone(r, self.rows)
 
-        for c = 1, self.cols do
+        for display_c = 1, self.cols do
+            local c      = self:_logicalCol(display_c)
             local action = self.edit_matrix[r][c]
             local label  = actionLabel(action)
             if overlaps then
@@ -132,7 +153,7 @@ function GridEditorWidget:_buildUI()
                 end,
             }
             table.insert(row_group, btn)
-            if c < self.cols then
+            if display_c < self.cols then
                 table.insert(row_group, HorizontalSpan:new{ width = sep })
             end
         end
@@ -153,8 +174,8 @@ function GridEditorWidget:_buildUI()
     end
     if has_overlap then
         local warn = TextBoxWidget:new{
-            text  = _("⚠ Overlaps with system zone."),
-            face  = hint_font,
+            text  = tr("⚠ Overlaps the system zone.", "⚠ Накладання на системну зону."),
+            face  = Font:getFace("smallinfofont"),
             width = inner_w,
         }
         table.insert(legend_widgets, VerticalSpan:new{ height = Size.padding.small })
@@ -168,8 +189,8 @@ function GridEditorWidget:_buildUI()
         width   = inner_w,
         buttons = {
             {
-                { text = _("Cancel"), callback = function() self:_onClose() end },
-                { text = _("Apply"),  callback = function() self:_onOK()    end },
+                { text = tr("Cancel", "Скасувати"), callback = function() self:_onClose() end },
+                { text = tr("Apply", "Застосувати"), callback = function() self:_onOK()    end },
             },
         },
         zero_sep = true,
@@ -178,7 +199,6 @@ function GridEditorWidget:_buildUI()
     local vgroup = VerticalGroup:new{ width = inner_w }
     table.insert(vgroup, title_bar)
     table.insert(vgroup, VerticalSpan:new{ height = Size.padding.small })
-    -- table.insert(vgroup, hint_container)
     table.insert(vgroup, VerticalSpan:new{ height = Size.padding.default })
     table.insert(vgroup, CenterContainer:new{
         dimen = Geom:new{ w = inner_w, h = grid_group:getSize().h },
@@ -214,7 +234,10 @@ function GridEditorWidget:_buildUI()
 end
 
 function GridEditorWidget:_rebuild()
-    self[1] = nil
+    if self[1] then
+        self[1]:free()
+        self[1] = nil
+    end
     self:_buildUI()
     UIManager:setDirty(self, "ui")
 end
@@ -231,13 +254,11 @@ function GridEditorWidget:_onOK()
         self.callback(result)
     end
     UIManager:close(self)
-    if self.close_callback then self.close_callback() end
     UIManager:setDirty(nil, "ui")
 end
 
 function GridEditorWidget:_onClose()
     UIManager:close(self)
-    if self.close_callback then self.close_callback() end
     UIManager:setDirty(nil, "ui")
 end
 
